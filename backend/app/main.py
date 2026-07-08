@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.config import Config
-from app.database import engine, Base, SessionLocal
+from app.database import engine, Base, SessionLocal, check_and_create_database
 from app.routes import auth_router, video_router
 from app.utils.logger import setup_logger
 from app.middleware.logger_middleware import logger_middleware
@@ -16,6 +16,13 @@ async def lifespan(app: FastAPI):
     logger = logging.getLogger("app")
     logger.info("Running application startup checks...")
     
+    # Auto-create PostgreSQL database if not exists
+    try:
+        check_and_create_database()
+        logger.info("Database check completed")
+    except Exception as e:
+        logger.warning(f"Could not verify or create database: {e}")
+        
     # Auto-create tables in PostgreSQL database
     try:
         Base.metadata.create_all(bind=engine)
