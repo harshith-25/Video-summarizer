@@ -68,7 +68,7 @@ export function App() {
   }, [errorMsg, successMsg]);
 
   return (
-    <Router>
+    <Router basename="/video-summarizer">
       <div className="app-container">
         {/* Toast Alerts */}
         {errorMsg && (
