@@ -50,6 +50,17 @@ export function Details({ setErrorMsg }: DetailsProps) {
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const getYoutubeId = (url: string) => {
+    if (!url) return null;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  const youtubeId = summaryData?.video?.source_type === 'youtube' && summaryData?.video?.source_url
+    ? getYoutubeId(summaryData.video.source_url)
+    : null;
+
   useEffect(() => {
     if (videoId) {
       loadSummary(parseInt(videoId));
@@ -103,13 +114,39 @@ export function Details({ setErrorMsg }: DetailsProps) {
   };
 
   const handleTimestampClick = (timeStr: string) => {
-    const video = videoRef.current;
-    if (!video) return;
     const val = parseTimestampToSeconds(timeStr);
-    if (!isNaN(val)) {
+    if (isNaN(val)) return;
+
+    if (youtubeId) {
+      const iframe = document.getElementById('youtube-player') as HTMLIFrameElement;
+      if (iframe && iframe.contentWindow) {
+        // Send command to seek to the specified seconds and start playing
+        iframe.contentWindow.postMessage(
+          JSON.stringify({
+            event: 'command',
+            func: 'seekTo',
+            args: [val, true]
+          }),
+          '*'
+        );
+        iframe.contentWindow.postMessage(
+          JSON.stringify({
+            event: 'command',
+            func: 'playVideo',
+            args: []
+          }),
+          '*'
+        );
+      }
+      const playerEl = document.getElementById('youtube-player');
+      if (playerEl && window.innerWidth < 992) {
+        playerEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    } else {
+      const video = videoRef.current;
+      if (!video) return;
       video.currentTime = val;
       video.play().catch((err) => setVideoError('Playback failed: ' + err.message));
-      // Scroll to top of video player on mobile devices so they can see it playing
       if (window.innerWidth < 992) {
         video.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
@@ -228,38 +265,52 @@ export function Details({ setErrorMsg }: DetailsProps) {
 
               {/* Isolated stacking context so no glass-panel overlay/pseudo-element can intercept clicks on the native controls */}
               <div className="video-click-guard">
-                <video
-                  key={summaryData.video.id}
-                  ref={videoRef}
-                  src={videoStreamUrl}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  onError={() => {
-                    const err = videoRef.current?.error;
-                    let msg = 'Unknown video error.';
-                    if (err) {
-                      switch (err.code) {
-                        case err.MEDIA_ERR_ABORTED:
-                          msg = 'Playback was aborted.';
-                          break;
-                        case err.MEDIA_ERR_NETWORK:
-                          msg = 'Network error while loading the video.';
-                          break;
-                        case err.MEDIA_ERR_DECODE:
-                          msg = 'Video could not be decoded (unsupported format or codec).';
-                          break;
-                        case err.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                          msg = 'Video source not supported or failed to load. Check the stream URL, token, and CORS headers on the backend.';
-                          break;
+                {youtubeId ? (
+                  <iframe
+                    id="youtube-player"
+                    key={summaryData.video.id}
+                    src={`https://www.youtube.com/embed/${youtubeId}?enablejsapi=1&autoplay=1`}
+                    title={summaryData.video.title}
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    className="details-video-el"
+                    style={{ border: 'none' }}
+                  />
+                ) : (
+                  <video
+                    key={summaryData.video.id}
+                    ref={videoRef}
+                    src={videoStreamUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    onError={() => {
+                      const err = videoRef.current?.error;
+                      let msg = 'Unknown video error.';
+                      if (err) {
+                        switch (err.code) {
+                          case err.MEDIA_ERR_ABORTED:
+                            msg = 'Playback was aborted.';
+                            break;
+                          case err.MEDIA_ERR_NETWORK:
+                            msg = 'Network error while loading the video.';
+                            break;
+                          case err.MEDIA_ERR_DECODE:
+                            msg = 'Video could not be decoded (unsupported format or codec).';
+                            break;
+                          case err.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                            msg = 'Video source not supported or failed to load. Check the stream URL, token, and CORS headers on the backend.';
+                            break;
+                        }
                       }
-                    }
-                    setVideoError(msg);
-                    console.error('Video error:', err, videoStreamUrl);
-                  }}
-                  onCanPlay={() => setVideoError(null)}
-                  className="details-video-el"
-                />
+                      setVideoError(msg);
+                      console.error('Video error:', err, videoStreamUrl);
+                    }}
+                    onCanPlay={() => setVideoError(null)}
+                    className="details-video-el"
+                  />
+                )}
               </div>
 
               {videoError && (

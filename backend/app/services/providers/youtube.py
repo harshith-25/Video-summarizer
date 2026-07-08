@@ -22,14 +22,32 @@ class YoutubeProvider(VideoProvider):
             # Initialize YouTube instance without OAuth to prevent hanging in background tasks
             yt = YouTube(source, use_oauth=False)
                 
-            # Filter for progressive mp4 streams first (video + audio combined)
-            stream = (
-                yt.streams.filter(progressive=True, file_extension="mp4")
-                .order_by("resolution")
-                .desc()
-                .first()
-            )
+            stream = None
+            if kwargs.get("only_audio", False):
+                # Filter for audio streams
+                stream = (
+                    yt.streams.filter(only_audio=True, file_extension="mp4")
+                    .order_by("abr")
+                    .desc()
+                    .first()
+                )
+                if not stream:
+                    stream = (
+                        yt.streams.filter(only_audio=True)
+                        .order_by("abr")
+                        .desc()
+                        .first()
+                    )
             
+            # Filter for progressive mp4 streams first (video + audio combined)
+            if not stream:
+                stream = (
+                    yt.streams.filter(progressive=True, file_extension="mp4")
+                    .order_by("resolution")
+                    .desc()
+                    .first()
+                )
+
             # Fallback to any mp4 stream (highest resolution)
             if not stream:
                 stream = (
@@ -40,7 +58,7 @@ class YoutubeProvider(VideoProvider):
                 )
                 
             if not stream:
-                raise RuntimeError("No valid MP4 streams found for this YouTube URL.")
+                raise RuntimeError("No valid streams found for this YouTube URL.")
                 
             downloaded_path = stream.download(output_path=output_dir)
             logger.info(f"[YoutubeProvider] Downloaded YouTube video to: {downloaded_path}")

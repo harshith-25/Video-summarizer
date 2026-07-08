@@ -102,6 +102,9 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
     video_path = None
     wav_path = None
     duration = 0.0
+    has_youtube_captions = False
+    raw_segments = []
+    raw_text = ""
     user_docs_dir = os.path.join(Config.USER_DOCUMENTS_PATH, str(user_id))
     user_media_dir = os.path.join(user_docs_dir, "media")
     user_temp_dir = os.path.join(user_docs_dir, "temp")
@@ -132,9 +135,59 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
                         video_title = yt.title
                     if yt.length:
                         duration = float(yt.length)
+                    
+                    # Try English caption (manual first, then auto-generated)
+                    caption = yt.captions.get("en") or yt.captions.get("a.en")
+                    if caption:
+                        logger.info(f"[Pipeline] Found YouTube captions for {source_value} before download. Parsing captions...")
+                        xml_content = caption.xml_captions
+                        
+                        import xml.etree.ElementTree as ET
+                        import html
+                        
+                        def format_timestamp(seconds: float) -> str:
+                            if seconds < 0:
+                                seconds = 0.0
+                            total_ms = int(round(seconds * 1000))
+                            total_sec, ms = divmod(total_ms, 1000)
+                            h, rem = divmod(total_sec, 3600)
+                            m, s = divmod(rem, 60)
+                            return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+                        
+                        root = ET.fromstring(xml_content)
+                        full_text_parts = []
+                        for child in root:
+                            if child.tag == 'text':
+                                start_s = float(child.attrib.get('start', 0.0))
+                                dur_s = float(child.attrib.get('dur', 0.0))
+                                end_s = start_s + dur_s
+                                text = html.unescape(child.text or "").strip()
+                                if not text:
+                                    continue
+                                raw_segments.append({
+                                    "start": format_timestamp(start_s),
+                                    "end": format_timestamp(end_s),
+                                    "start_s": start_s,
+                                    "end_s": end_s,
+                                    "text": text
+                                })
+                                full_text_parts.append(text)
+                                
+                        raw_text = " ".join(full_text_parts)
+                        if raw_text.strip():
+                            has_youtube_captions = True
+                            logger.info(f"[Pipeline] Successfully parsed YouTube captions. {len(raw_segments)} segments retrieved.")
                 except Exception as e:
-                    logger.warning(f"[Pipeline] Failed to resolve YouTube metadata: {e}")
-                video_path = YoutubeProvider().download(source_value, user_media_dir)
+                    logger.warning(f"[Pipeline] Failed to resolve YouTube metadata/captions: {e}")
+                
+                if has_youtube_captions:
+                    # Skip downloading entirely! Use a placeholder path
+                    video_path = f"youtube_online_{yt.video_id}"
+                    logger.info(f"[Pipeline] Skipping download because captions exist. Local path set to: {video_path}")
+                else:
+                    # Download only the audio stream to make transcription much faster!
+                    logger.info(f"[Pipeline] No English captions found. Downloading audio-only stream for Whisper...")
+                    video_path = YoutubeProvider().download(source_value, user_media_dir, only_audio=True)
             elif provider_type == 'vimeo':
                 try:
                     v_id = VimeoProvider()._extract_video_id(source_value)
@@ -178,7 +231,7 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
         db.commit()
 
         # Check file size & duration
-        file_size = os.path.getsize(video_path)
+        file_size = os.path.getsize(video_path) if (video_path and os.path.exists(video_path)) else 0
         if duration == 0.0 and video_path and os.path.exists(video_path):
             duration = get_video_duration(video_path)
         
@@ -200,57 +253,8 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
         db.commit()
 
         # Check if we can use pre-existing YouTube captions
-        has_youtube_captions = False
-        raw_segments = []
-        raw_text = ""
-
-        if source_type == 'url' and detect_provider(source_value) == 'youtube':
-            try:
-                from pytubefix import YouTube
-                yt = YouTube(source_value, use_oauth=False)
-                # Try English caption (manual first, then auto-generated)
-                caption = yt.captions.get("en") or yt.captions.get("a.en")
-                if caption:
-                    logger.info(f"[Pipeline] Found YouTube captions for {source_value}. Downloading and parsing captions...")
-                    xml_content = caption.xml_captions
-                    
-                    import xml.etree.ElementTree as ET
-                    import html
-                    
-                    def format_timestamp(seconds: float) -> str:
-                        if seconds < 0:
-                            seconds = 0.0
-                        total_ms = int(round(seconds * 1000))
-                        total_sec, ms = divmod(total_ms, 1000)
-                        h, rem = divmod(total_sec, 3600)
-                        m, s = divmod(rem, 60)
-                        return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
-                    
-                    root = ET.fromstring(xml_content)
-                    full_text_parts = []
-                    for child in root:
-                        if child.tag == 'text':
-                            start_s = float(child.attrib.get('start', 0.0))
-                            duration = float(child.attrib.get('dur', 0.0))
-                            end_s = start_s + duration
-                            text = html.unescape(child.text or "").strip()
-                            if not text:
-                                continue
-                            raw_segments.append({
-                                "start": format_timestamp(start_s),
-                                "end": format_timestamp(end_s),
-                                "start_s": start_s,
-                                "end_s": end_s,
-                                "text": text
-                            })
-                            full_text_parts.append(text)
-                            
-                    raw_text = " ".join(full_text_parts)
-                    if raw_text.strip():
-                        has_youtube_captions = True
-                        logger.info(f"[Pipeline] Successfully parsed YouTube captions. {len(raw_segments)} segments retrieved.")
-            except Exception as e:
-                logger.warning(f"[Pipeline] Failed to retrieve/parse YouTube captions: {e}", exc_info=True)
+        if has_youtube_captions:
+            logger.info("[Pipeline] Using YouTube captions pre-extracted during metadata phase. Skipping download and transcription.")
 
         if has_youtube_captions:
             job.progress = 70
