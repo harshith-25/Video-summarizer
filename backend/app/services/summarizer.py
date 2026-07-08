@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Callable
 from app.llm.mistral_provider import MistralProvider
 
 logger = logging.getLogger("app")
@@ -89,7 +89,7 @@ class Summarizer:
             logger.error(f"[Summarizer] Error summarizing chunk: {e}")
             return "Error summarizing this section."
 
-    def generate_final_summary(self, segments: List[Dict], video_title: str, source_type: str = "URL", target_language: str = "en") -> Dict[str, Any]:
+    def generate_final_summary(self, segments: List[Dict], video_title: str, source_type: str = "URL", target_language: str = "en", progress_callback: Optional[Callable[[str, int], None]] = None) -> Dict[str, Any]:
         """
         Processes segments, summarizes them (using chunking if necessary), 
         and outputs the final well-structured JSON document in the target language.
@@ -112,6 +112,10 @@ class Summarizer:
             partial_summaries = []
 
             for i, chunk in enumerate(chunks):
+                if progress_callback:
+                    # Update progress dynamically between 80% and 86% depending on chunk number
+                    chunk_prog = 80 + int((i / len(chunks)) * 6)
+                    progress_callback(f"Generating video summaries (Section {i+1}/{len(chunks)})...", chunk_prog)
                 logger.info(f"[Summarizer] Summarizing chunk {i+1}/{len(chunks)}")
                 p_sum = self.summarize_chunk(chunk)
                 partial_summaries.append(f"Section {i+1} Summary:\n{p_sum}")
@@ -152,7 +156,7 @@ class Summarizer:
             "- Key Topics: Maximum 8 topics, with each topic description restricted to a maximum of 25 words.\n"
             "- Important Points: Maximum 10 bullets, with each bullet restricted to a maximum of 20 words.\n"
             "- Action Items: Only include if explicitly mentioned or clearly implied; otherwise return [].\n"
-            "- Timeline: Only major topic changes or milestones, maximum 10 entries. Event description should be very short.\n"
+            "- Timeline: Only major topic changes or milestones, maximum 10 entries. Event description should be very short. The 'timestamp' MUST be a video playback offset from the transcript (formatted as HH:MM:SS.mmm), NOT a calendar date or historical year (like 1632).\n"
             "- Conclusion: Exactly 1 concise concluding sentence.\n\n"
             "Negative Guidelines (Do NOT):\n"
             "- Do NOT repeat the same information across different sections.\n"
@@ -160,8 +164,9 @@ class Summarizer:
             "- Do NOT rewrite or copy-paste large portions of the transcript.\n"
             "- Do NOT explain every example in detail (summarize them instead).\n"
             "- Do NOT use marketing or promotional language.\n"
-            "- Do NOT add conversational introductions like 'The video discusses...' or 'In this video...'.\n\n"
-            f"You MUST respond ONLY with a raw JSON block in {target_lang_name} matching this schema:\n"
+            "- Do NOT add conversational introductions like 'The video discusses...' or 'In this video...'.\n"
+            "- Do NOT use calendar years or historical dates (like 1632 or 2024) as timeline timestamps. Use only video playback offsets.\n\n"
+            "You MUST respond ONLY with a raw JSON block in {target_lang_name} matching this schema:\n"
             "{\n"
             "  \"executive_summary\": \"2-5 concise sentences (80-120 words).\",\n"
             "  \"detailed_summary\": \"One concise paragraph (150-250 words) covering the complete flow without repeating the executive summary.\",\n"
@@ -175,7 +180,7 @@ class Summarizer:
             "     \"Actionable task or next step explicitly mentioned or clearly implied.\"\n"
             "  ],\n"
             "  \"timeline\": [\n"
-            "     {\"timestamp\": \"HH:MM:SS.mmm\", \"event\": \"Very short event description.\"}\n"
+            "     {\"timestamp\": \"HH:MM:SS.mmm\", \"event\": \"Very short event description. The timestamp MUST match a playback offset from the transcript (e.g. 00:01:30.000), NOT a calendar year (like 1632).\"}\n"
             "  ],\n"
             "  \"conclusion\": \"One concise concluding sentence.\"\n"
             "}"
@@ -189,6 +194,9 @@ class Summarizer:
             f"Timeline reference moments:\n\n{timeline_context}\n\n"
             "Synthesize this information and output the final valid JSON document according to the system instructions and constraints."
         )
+
+        if progress_callback:
+            progress_callback("Synthesizing final video summary (AI)...", 88)
 
         try:
             llm_output = self.llm.generate(prompt=prompt, system_prompt=system_prompt, max_tokens=2500)

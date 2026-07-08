@@ -113,9 +113,15 @@ export function Details({ setErrorMsg }: DetailsProps) {
     return (hours * 3600) + (minutes * 60) + seconds;
   };
 
-  const handleTimestampClick = (timeStr: string) => {
+  const isClickableTimestamp = (timeStr: string) => {
+    if (!timeStr || !summaryData) return false;
     const val = parseTimestampToSeconds(timeStr);
-    if (isNaN(val)) return;
+    return !isNaN(val) && val <= summaryData.video.duration;
+  };
+
+  const handleTimestampClick = (timeStr: string) => {
+    if (!isClickableTimestamp(timeStr)) return;
+    const val = parseTimestampToSeconds(timeStr);
 
     if (youtubeId) {
       const iframe = document.getElementById('youtube-player') as HTMLIFrameElement;
@@ -181,6 +187,9 @@ export function Details({ setErrorMsg }: DetailsProps) {
     if (!timeStr) return '00:00';
     const val = parseTimestampToSeconds(timeStr);
     if (!isNaN(val)) {
+      if (summaryData && val > summaryData.video.duration) {
+        return timeStr;
+      }
       return formatDuration(val);
     }
     return timeStr;
@@ -460,22 +469,26 @@ export function Details({ setErrorMsg }: DetailsProps) {
                       </div>
                     ) : (
                       <div className="timeline">
-                        {summaryData.summary.timeline.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="timeline-item timeline-item-interactive"
-                            onClick={() => handleTimestampClick(item.timestamp)}
-                          >
-                            <div className="timeline-dot"></div>
-                            <div className="timeline-time" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-primary)', fontWeight: 'bold' }}>
-                              <PlayIcon size={10} fill="var(--accent-primary)" />
-                              <span>{formatTimestamp(item.timestamp)}</span>
+                        {summaryData.summary.timeline.map((item, idx) => {
+                          const clickable = isClickableTimestamp(item.timestamp);
+                          return (
+                            <div
+                              key={idx}
+                              className={`timeline-item ${clickable ? 'timeline-item-interactive' : ''}`}
+                              style={{ cursor: clickable ? 'pointer' : 'default' }}
+                              onClick={() => clickable && handleTimestampClick(item.timestamp)}
+                            >
+                              <div className="timeline-dot"></div>
+                              <div className="timeline-time" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: clickable ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: 'bold' }}>
+                                {clickable && <PlayIcon size={10} fill="var(--accent-primary)" />}
+                                <span>{formatTimestamp(item.timestamp)}</span>
+                              </div>
+                              <div className="timeline-content" style={{ marginTop: '0.2rem' }}>
+                                {item.event || item.summary || item.description || item.text || ''}
+                              </div>
                             </div>
-                            <div className="timeline-content" style={{ marginTop: '0.2rem' }}>
-                              {item.event || item.summary || item.description || item.text || ''}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

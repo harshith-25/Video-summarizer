@@ -136,8 +136,27 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
                     if yt.length:
                         duration = float(yt.length)
                     
-                    # Try English caption (manual first, then auto-generated)
-                    caption = yt.captions.get("en") or yt.captions.get("a.en")
+                    # Prioritize English captions, fall back to any available captions (manual first, then auto-generated)
+                    caption = None
+                    index = yt.captions.lang_code_index
+                    
+                    if "en" in index:
+                        caption = index["en"]
+                    elif "a.en" in index:
+                        caption = index["a.en"]
+                    else:
+                        # Prioritize any manual caption (no 'a.' prefix)
+                        for code in index.keys():
+                            if not code.startswith("a."):
+                                caption = index[code]
+                                logger.info(f"[Pipeline] English captions not found. Using manual captions: {code}")
+                                break
+                        # Fallback to the first available auto-generated caption
+                        if not caption and len(index) > 0:
+                            first_code = list(index.keys())[0]
+                            caption = index[first_code]
+                            logger.info(f"[Pipeline] English captions not found. Using auto-generated captions: {first_code}")
+                            
                     if caption:
                         logger.info(f"[Pipeline] Found YouTube captions for {source_value} before download. Parsing captions...")
                         xml_content = caption.xml_captions
@@ -284,8 +303,9 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
             # 2. Extract Audio
             wav_path = AudioExtractor().extract_audio(video_path, user_temp_dir)
 
+            duration_desc = f" ({int(duration // 60)} min video)" if duration > 0 else ""
             job.progress = 50
-            job.message = 'Transcribing speech to text (AI)...'
+            job.message = f'Transcribing speech to text (AI){duration_desc}... This may take a few minutes.'
             db.commit()
 
             # 3. Speech to text
@@ -320,11 +340,17 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
         db.commit()
 
         # 5. Summarization
+        def update_progress_callback(msg: str, prg: int):
+            job.progress = prg
+            job.message = msg
+            db.commit()
+
         summary_data = Summarizer().generate_final_summary(
             segments=merged_segments,
             video_title=video_title,
             source_type=video.source_type,
-            target_language=language
+            target_language=language,
+            progress_callback=update_progress_callback
         )
 
         # Save Summary to DB
