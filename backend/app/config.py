@@ -36,3 +36,6 @@ class Config:
     
     # Path to multilingual font for PDF generation (ReportLab)
     NIRMALA_FONT_PATH = os.getenv("NIRMALA_FONT_PATH", "C:\\Windows\\Fonts\\Nirmala.ttc")
+    
+    # Frontend URL (for OAuth redirect callbacks)
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')

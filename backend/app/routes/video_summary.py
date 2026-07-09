@@ -876,7 +876,7 @@ def google_oauth_callback(
         )
         
         # Redirect back to the frontend's tracker page
-        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        frontend_url = Config.FRONTEND_URL
         # Make sure redirect preserves /video-summarizer basename
         redirect_target = f"{frontend_url.rstrip('/')}/video-summarizer/tracker/{job.id}"
         logger.info(f"[YouTubeAuth] Redirecting user to tracker: {redirect_target}")
@@ -885,6 +885,6 @@ def google_oauth_callback(
     except Exception as e:
         logger.error(f"[YouTubeAuth] OAuth callback handler failed: {e}", exc_info=True)
         # Redirect back to the frontend dashboard with an error parameter
-        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        frontend_url = Config.FRONTEND_URL
         redirect_target = f"{frontend_url.rstrip('/')}/video-summarizer/?error={urlencode({'msg': str(e)})}"
         return RedirectResponse(redirect_target)
