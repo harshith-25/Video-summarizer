@@ -10,9 +10,11 @@ import {
   ListTodo as ListTodoIcon,
   HelpCircle as HelpCircleIcon,
   CheckCircle2 as CheckCircle2Icon,
-  Play as PlayIcon
+  Play as PlayIcon,
+  AlignLeft as AlignLeftIcon
 } from 'lucide-react';
 import { api, getToken, BASE_URL } from '../api';
+import './Details.css';
 
 type SummaryData = {
   video: {
@@ -33,6 +35,16 @@ type SummaryData = {
     timeline: any[];
     conclusion: string;
   };
+  transcript?: {
+    id: number;
+    video_id: number;
+    raw_text: string;
+    cleaned_text: string;
+    segments_json: any[] | null;
+    model_name: string;
+    language: string;
+    created_at: string;
+  } | null;
 };
 
 type DetailsProps = {
@@ -45,8 +57,10 @@ export function Details({ setErrorMsg }: DetailsProps) {
 
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
-  const [summaryTab, setSummaryTab] = useState<'OVERVIEW' | 'DETAILED' | 'TOPICS' | 'ACTIONS' | 'TIMELINE'>('OVERVIEW');
+  const [summaryTab, setSummaryTab] = useState<'OVERVIEW' | 'DETAILED' | 'TOPICS' | 'ACTIONS' | 'TIMELINE' | 'TRANSCRIPT'>('OVERVIEW');
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [showPlayer, setShowPlayer] = useState(false);
+  const [pendingSeek, setPendingSeek] = useState<number | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -119,10 +133,7 @@ export function Details({ setErrorMsg }: DetailsProps) {
     return !isNaN(val) && val <= summaryData.video.duration;
   };
 
-  const handleTimestampClick = (timeStr: string) => {
-    if (!isClickableTimestamp(timeStr)) return;
-    const val = parseTimestampToSeconds(timeStr);
-
+  const executeSeek = (val: number) => {
     if (youtubeId) {
       const iframe = document.getElementById('youtube-player') as HTMLIFrameElement;
       if (iframe && iframe.contentWindow) {
@@ -145,7 +156,7 @@ export function Details({ setErrorMsg }: DetailsProps) {
         );
       }
       const playerEl = document.getElementById('youtube-player');
-      if (playerEl && window.innerWidth < 992) {
+      if (playerEl) {
         playerEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     } else {
@@ -153,11 +164,31 @@ export function Details({ setErrorMsg }: DetailsProps) {
       if (!video) return;
       video.currentTime = val;
       video.play().catch((err) => setVideoError('Playback failed: ' + err.message));
-      if (window.innerWidth < 992) {
-        video.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+      video.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
+
+  const handleTimestampClick = (timeStr: string) => {
+    if (!isClickableTimestamp(timeStr)) return;
+    const val = parseTimestampToSeconds(timeStr);
+
+    if (!showPlayer) {
+      setPendingSeek(val);
+      setShowPlayer(true);
+    } else {
+      executeSeek(val);
+    }
+  };
+
+  useEffect(() => {
+    if (showPlayer && pendingSeek !== null) {
+      const timer = setTimeout(() => {
+        executeSeek(pendingSeek);
+        setPendingSeek(null);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [showPlayer, pendingSeek]);
 
   const formatDuration = (seconds: number) => {
     if (!seconds) return 'N/A';
@@ -199,6 +230,9 @@ export function Details({ setErrorMsg }: DetailsProps) {
     ? `${BASE_URL}/api/video/${summaryData.video.id}/stream?token=${getToken()}`
     : '';
 
+
+  console.log(summaryData);
+
   return (
     <div className="summary-container">
       <div>
@@ -229,7 +263,9 @@ export function Details({ setErrorMsg }: DetailsProps) {
                 {summaryData.video.duration > 0 && (
                   <span>Duration: <strong>{formatDuration(summaryData.video.duration)}</strong></span>
                 )}
-                <span>Size: <strong>{formatBytes(summaryData.video.file_size)}</strong></span>
+                {summaryData.video.source_type !== 'youtube' && (
+                  <span>Size: <strong>{formatBytes(summaryData.video.file_size)}</strong></span>
+                )}
               </div>
             </div>
 
@@ -266,82 +302,97 @@ export function Details({ setErrorMsg }: DetailsProps) {
           <div className="details-layout-grid">
 
             {/* Column 1: Audio/Video Player Panel */}
-            <div className="video-player-card glass-panel">
-              <h3 style={{ fontFamily: 'var(--font-display)', marginBottom: '0.75rem', fontSize: '1.1rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <PlayIcon size={16} fill="var(--accent-primary)" />
-                <span>Playback Media</span>
-              </h3>
-
-              {/* Isolated stacking context so no glass-panel overlay/pseudo-element can intercept clicks on the native controls */}
-              <div className="video-click-guard">
-                {youtubeId ? (
-                  <iframe
-                    id="youtube-player"
-                    key={summaryData.video.id}
-                    src={`https://www.youtube.com/embed/${youtubeId}?enablejsapi=1&autoplay=1`}
-                    title={summaryData.video.title}
-                    frameBorder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                    className="details-video-el"
-                    style={{ border: 'none' }}
-                  />
-                ) : (
-                  <video
-                    key={summaryData.video.id}
-                    ref={videoRef}
-                    src={videoStreamUrl}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    onError={() => {
-                      const err = videoRef.current?.error;
-                      let msg = 'Unknown video error.';
-                      if (err) {
-                        switch (err.code) {
-                          case err.MEDIA_ERR_ABORTED:
-                            msg = 'Playback was aborted.';
-                            break;
-                          case err.MEDIA_ERR_NETWORK:
-                            msg = 'Network error while loading the video.';
-                            break;
-                          case err.MEDIA_ERR_DECODE:
-                            msg = 'Video could not be decoded (unsupported format or codec).';
-                            break;
-                          case err.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                            msg = 'Video source not supported or failed to load. Check the stream URL, token, and CORS headers on the backend.';
-                            break;
-                        }
-                      }
-                      setVideoError(msg);
-                      console.error('Video error:', err, videoStreamUrl);
-                    }}
-                    onCanPlay={() => setVideoError(null)}
-                    className="details-video-el"
-                  />
-                )}
+            {!showPlayer ? (
+              <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', border: '1px solid var(--border-color)', width: '100%' }}>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Playback is currently hidden.</span>
+                <button className="btn btn-primary" onClick={() => setShowPlayer(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <PlayIcon size={14} fill="currentColor" />
+                  <span>Open Video Player</span>
+                </button>
               </div>
-
-              {videoError && (
-                <div
-                  style={{
-                    marginTop: '0.6rem',
-                    padding: '0.6rem 0.8rem',
-                    borderRadius: '8px',
-                    background: 'rgba(220,38,38,0.1)',
-                    color: '#dc2626',
-                    fontSize: '0.85rem',
-                    lineHeight: 1.4
-                  }}
-                >
-                  ⚠️ {videoError}
+            ) : (
+              <div className="video-player-card glass-panel">
+                <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', maxWidth: '960px' }}>
+                  <h3 style={{ fontFamily: 'var(--font-display)', margin: 0, fontSize: '1.1rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <PlayIcon size={16} fill="var(--accent-primary)" />
+                    <span>Playback Media</span>
+                  </h3>
+                  <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => setShowPlayer(false)}>
+                    Hide Player
+                  </button>
                 </div>
-              )}
 
-              <div style={{ marginTop: '0.85rem', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.5', textAlign: 'center' }}>
-                💡 Click timestamps in the <strong>Interactive Timeline</strong> tab to jump directly to topics of interest.
+                {/* Isolated stacking context so no glass-panel overlay/pseudo-element can intercept clicks on the native controls */}
+                <div className="video-click-guard">
+                  {youtubeId ? (
+                    <iframe
+                      id="youtube-player"
+                      key={summaryData.video.id}
+                      src={`https://www.youtube.com/embed/${youtubeId}?enablejsapi=1&autoplay=0`}
+                      title={summaryData.video.title}
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      className="details-video-el"
+                      style={{ border: 'none' }}
+                    />
+                  ) : (
+                    <video
+                      key={summaryData.video.id}
+                      ref={videoRef}
+                      src={videoStreamUrl}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      onError={() => {
+                        const err = videoRef.current?.error;
+                        let msg = 'Unknown video error.';
+                        if (err) {
+                          switch (err.code) {
+                            case err.MEDIA_ERR_ABORTED:
+                              msg = 'Playback was aborted.';
+                              break;
+                            case err.MEDIA_ERR_NETWORK:
+                              msg = 'Network error while loading the video.';
+                              break;
+                            case err.MEDIA_ERR_DECODE:
+                              msg = 'Video could not be decoded (unsupported format or codec).';
+                              break;
+                            case err.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                              msg = 'Video source not supported or failed to load. Check the stream URL, token, and CORS headers on the backend.';
+                              break;
+                          }
+                        }
+                        setVideoError(msg);
+                        console.error('Video error:', err, videoStreamUrl);
+                      }}
+                      onCanPlay={() => setVideoError(null)}
+                      className="details-video-el"
+                    />
+                  )}
+                </div>
+
+                {videoError && (
+                  <div
+                    style={{
+                      marginTop: '0.6rem',
+                      padding: '0.6rem 0.8rem',
+                      borderRadius: '8px',
+                      background: 'rgba(220,38,38,0.1)',
+                      color: '#dc2626',
+                      fontSize: '0.85rem',
+                      lineHeight: 1.4
+                    }}
+                  >
+                    ⚠️ {videoError}
+                  </div>
+                )}
+
+                <div style={{ marginTop: '0.85rem', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.5', textAlign: 'center' }}>
+                  💡 Click timestamps in the <strong>Interactive Timeline</strong> or <strong>Source Transcript</strong> tab to jump directly to topics of interest.
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Column 2: Document summaries navigation tabs */}
             <div className="details-content-card">
@@ -381,6 +432,13 @@ export function Details({ setErrorMsg }: DetailsProps) {
                 >
                   <ClockIcon size={16} />
                   <span>Interactive Timeline</span>
+                </button>
+                <button
+                  className={`summary-tab-btn ${summaryTab === 'TRANSCRIPT' ? 'active' : ''}`}
+                  onClick={() => setSummaryTab('TRANSCRIPT')}
+                >
+                  <AlignLeftIcon size={16} />
+                  <span>Source Transcript</span>
                 </button>
               </div>
 
@@ -494,74 +552,76 @@ export function Details({ setErrorMsg }: DetailsProps) {
                   </div>
                 )}
 
+                {/* TAB 6: SOURCE TRANSCRIPT */}
+                {summaryTab === 'TRANSCRIPT' && (
+                  <div className="section-card glass-panel">
+                    <h3 style={{ marginBottom: '1.25rem', fontFamily: 'var(--font-display)' }}>Source Transcript</h3>
+                    {summaryData.transcript ? (
+                      <div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+                          <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                            Source: <strong style={{ color: 'var(--accent-primary)' }}>
+                              {summaryData.transcript.model_name === 'youtube-captions' ? 'YouTube Subtitles / Captions' : 'AI Speech-to-Text (Whisper)'}
+                            </strong>
+                          </span>
+                          <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                            Language: <strong style={{ textTransform: 'uppercase' }}>{summaryData.transcript.language || 'en'}</strong>
+                          </span>
+                        </div>
+                        
+                        {(!summaryData.transcript.segments_json || summaryData.transcript.segments_json.length === 0) ? (
+                          <div style={{ whiteSpace: 'pre-line', fontSize: '1.05rem', lineHeight: '1.8', color: 'var(--text-primary)' }}>
+                            {summaryData.transcript.cleaned_text || summaryData.transcript.raw_text}
+                          </div>
+                        ) : (
+                          <div className="transcript-scroll-container" style={{ maxHeight: '550px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                            <div className="transcript-segments-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                              {summaryData.transcript.segments_json.map((seg: any, idx: number) => {
+                                const clickable = isClickableTimestamp(seg.start);
+                                return (
+                                  <div 
+                                    key={idx} 
+                                    className={`transcript-segment-row ${clickable ? 'timeline-item-interactive' : ''}`}
+                                    style={{ 
+                                      display: 'flex', 
+                                      gap: '1rem', 
+                                      alignItems: 'flex-start', 
+                                      padding: '0.6rem 0.8rem', 
+                                      borderRadius: '8px', 
+                                      cursor: clickable ? 'pointer' : 'default',
+                                      borderLeft: '2px solid transparent',
+                                      transition: 'all 0.2s ease'
+                                    }}
+                                    onClick={() => clickable && handleTimestampClick(seg.start)}
+                                  >
+                                    <div className="timeline-time" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-primary)', fontWeight: 'bold', minWidth: '85px', flexShrink: 0 }}>
+                                      {clickable && <PlayIcon size={10} fill="var(--accent-primary)" />}
+                                      <span>{formatTimestamp(seg.start)}</span>
+                                    </div>
+                                    <div className="segment-text" style={{ fontSize: '0.95rem', lineHeight: '1.6', color: 'var(--text-primary)' }}>
+                                      {seg.text}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="empty-state">
+                        <p>No transcript source data available for this video.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
               </div>
             </div>
 
           </div>
         </>
       ) : null}
-
-      <style>{`
-        .details-layout-grid {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 1.5rem;
-          align-items: start;
-          margin-top: 1.5rem;
-        }
-        @media (min-width: 992px) {
-          .details-layout-grid {
-            grid-template-columns: 0.9fr 1.1fr;
-          }
-          .video-player-card {
-            position: sticky;
-            top: 24px;
-          }
-        }
-        .video-player-card {
-          padding: 1.25rem;
-          border: 1px solid var(--border-color);
-        }
-
-        /* --- Fix: nothing (glass-panel blur pseudo-elements, overlays, etc.)
-           can sit above the video and eat clicks meant for its native controls. --- */
-        .video-click-guard {
-          position: relative;
-          isolation: isolate;   /* creates a fresh stacking context, independent of any parent ::before/::after */
-          z-index: 0;
-        }
-        .video-click-guard * {
-          pointer-events: auto;
-        }
-        .details-video-el {
-          position: relative;
-          z-index: 2147483647; /* max safe int: guarantees this sits above any overlay in the same stacking context */
-          width: 100%;
-          display: block;
-          max-height: 360px;
-          aspect-ratio: 16 / 9;
-          background: #000;
-          border-radius: 12px;
-          border: 1px solid var(--border-color);
-          pointer-events: auto;
-        }
-
-        .timeline-item-interactive {
-          cursor: pointer;
-          transition: background-color var(--transition-speed), transform var(--transition-speed);
-          border-radius: var(--border-radius-sm);
-          padding: 0.6rem;
-          margin-left: -0.6rem;
-          margin-right: -0.6rem;
-        }
-        .timeline-item-interactive:hover {
-          background-color: var(--bg-tertiary);
-          transform: translateX(4px);
-        }
-        .timeline-item-interactive:active {
-          transform: scale(0.98) translateX(4px);
-        }
-      `}</style>
     </div>
   );
 }

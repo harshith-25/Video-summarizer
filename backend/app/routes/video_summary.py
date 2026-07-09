@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, HttpUrl
+from urllib.parse import urlparse, urlencode
 
 from app.database import get_db, SessionLocal
 from app.middleware.auth_middleware import get_current_user
@@ -90,7 +91,16 @@ def get_video_duration(video_path: str) -> float:
     return 0.0
 
 # Background pipeline task
-def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value: str, video_title: str, language: Optional[str] = "en"):
+def run_video_pipeline(
+    job_id: str,
+    user_id: int,
+    source_type: str,
+    source_value: str,
+    video_title: str,
+    language: Optional[str] = "en",
+    oauth_token_file: Optional[str] = None,
+    pending_upload_id: Optional[str] = None
+):
     db: Session = SessionLocal()
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -130,7 +140,17 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
             if provider_type == 'youtube':
                 try:
                     from pytubefix import YouTube
-                    yt = YouTube(source_value, use_oauth=False)
+                    if oauth_token_file:
+                        try:
+                            logger.info(f"[Pipeline] Initializing YouTube with OAuth token file: {oauth_token_file}")
+                            yt = YouTube(source_value, use_oauth=True, allow_oauth_cache=True, token_file=oauth_token_file)
+                            # Access property to trigger actual playability check/fetch
+                            _ = yt.title
+                        except Exception as oauth_err:
+                            logger.warning(f"[Pipeline] YouTube OAuth metadata check failed: {oauth_err}. Falling back to unauthenticated initialization...")
+                            yt = YouTube(source_value, use_oauth=False)
+                    else:
+                        yt = YouTube(source_value, use_oauth=False)
                     if video_title == "Online Video File":
                         video_title = yt.title
                     if yt.length:
@@ -206,7 +226,13 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
                 else:
                     # Download only the audio stream to make transcription much faster!
                     logger.info(f"[Pipeline] No English captions found. Downloading audio-only stream for Whisper...")
-                    video_path = YoutubeProvider().download(source_value, user_media_dir, only_audio=True)
+                    video_path = YoutubeProvider().download(
+                        source_value,
+                        user_media_dir,
+                        only_audio=True,
+                        use_oauth=bool(oauth_token_file),
+                        token_file=oauth_token_file
+                    )
             elif provider_type == 'vimeo':
                 try:
                     v_id = VimeoProvider()._extract_video_id(source_value)
@@ -413,6 +439,12 @@ def run_video_pipeline(job_id: str, user_id: int, source_type: str, source_value
                 logger.info(f"[Pipeline] Cleaned up temporary wav: {wav_path}")
             except Exception:
                 pass
+        if pending_upload_id:
+            try:
+                from app.services.youtube_auth_service import YouTubeAuthService
+                YouTubeAuthService.cleanup_upload_auth(pending_upload_id, oauth_token_file)
+            except Exception as auth_err:
+                logger.warning(f"[Pipeline] Failed to clean up YouTube auth session {pending_upload_id}: {auth_err}")
         db.close()
 
 # API Endpoints
@@ -641,10 +673,13 @@ def get_summary(video_id: int, db: Session = Depends(get_db), current_user: User
     if not summary:
         raise HTTPException(status_code=404, detail="Summary not generated yet.")
 
+    transcript = db.query(Transcript).filter(Transcript.video_id == video.id).first()
+
     return {
         "success": True,
         "video": video.to_dict(),
-        "summary": summary.to_dict()
+        "summary": summary.to_dict(),
+        "transcript": transcript.to_dict() if transcript else None
     }
 
 @video_router.get("/summary/{video_id}/status")
@@ -750,3 +785,106 @@ def delete_job(job_id: str, db: Session = Depends(get_db), current_user: User = 
         db.rollback()
         logger.error(f"Failed deleting job {job_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed deleting job: {e}")
+
+@video_router.get("/youtube/auth/initiate")
+def initiate_youtube_auth(
+    video_url: str,
+    token: str,
+    title: Optional[str] = None,
+    language: Optional[str] = "en",
+    request: Request = None
+):
+    from app.utils.jwt_helper import decode_token
+    from app.services.youtube_auth_service import YouTubeAuthService
+    
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
+    user_id = payload.get("user_id")
+    
+    # Create pending upload session
+    pending_upload_id = YouTubeAuthService.create_pending_upload(
+        user_id=user_id,
+        video_url=video_url,
+        title=title,
+        language=language
+    )
+    
+    # Construct root_url and url_prefix based on current request
+    parsed_url = urlparse(str(request.url))
+    root_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    
+    # Initiate auth
+    auth_data = YouTubeAuthService.start_upload_auth(
+        user_id=user_id,
+        pending_upload_id=pending_upload_id,
+        root_url=root_url,
+        url_prefix="/api"
+    )
+    
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(auth_data["auth_url"])
+
+@video_router.get("/admin/auth/google/callback")
+def google_oauth_callback(
+    state: str,
+    code: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    from app.services.youtube_auth_service import YouTubeAuthService
+    from fastapi.responses import RedirectResponse
+    
+    try:
+        # Complete YouTube authorization and exchange code for tokens
+        auth_result = YouTubeAuthService.complete_upload_auth(state=state, code=code)
+        pending_upload_id = auth_result["pending_upload_id"]
+        user_id = auth_result["user_id"]
+        oauth_token_file = auth_result["oauth_token_file"]
+        
+        # Retrieve details of the pending upload
+        pending_upload = YouTubeAuthService.get_pending_upload(pending_upload_id)
+        if not pending_upload:
+            raise HTTPException(status_code=400, detail="Pending upload session not found.")
+            
+        video_url = pending_upload["video_url"]
+        video_title = pending_upload["title"] or "Online Video File"
+        language = pending_upload["language"]
+        
+        # Create Job record
+        job = Job(
+            user_id=user_id,
+            status='queued',
+            progress=0,
+            message='Job queued. Authorized with YouTube OAuth.'
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
+        # Queue the background processing task, passing the oauth_token_file
+        background_tasks.add_task(
+            run_video_pipeline,
+            job.id,
+            user_id,
+            'url',
+            video_url,
+            video_title,
+            language,
+            oauth_token_file,
+            pending_upload_id
+        )
+        
+        # Redirect back to the frontend's tracker page
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        # Make sure redirect preserves /video-summarizer basename
+        redirect_target = f"{frontend_url.rstrip('/')}/video-summarizer/tracker/{job.id}"
+        logger.info(f"[YouTubeAuth] Redirecting user to tracker: {redirect_target}")
+        return RedirectResponse(redirect_target)
+        
+    except Exception as e:
+        logger.error(f"[YouTubeAuth] OAuth callback handler failed: {e}", exc_info=True)
+        # Redirect back to the frontend dashboard with an error parameter
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        redirect_target = f"{frontend_url.rstrip('/')}/video-summarizer/?error={urlencode({'msg': str(e)})}"
+        return RedirectResponse(redirect_target)

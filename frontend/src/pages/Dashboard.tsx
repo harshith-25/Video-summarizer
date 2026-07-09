@@ -8,7 +8,7 @@ import {
   RefreshCw as RefreshCwIcon, 
   Video as VideoIcon
 } from 'lucide-react';
-import { api } from '../api';
+import { api, BASE_URL, getToken } from '../api';
 
 type VideoItem = {
   id: number | null;
@@ -64,6 +64,15 @@ export function Dashboard({ setErrorMsg, setSuccessMsg }: DashboardProps) {
 
   useEffect(() => {
     fetchVideos();
+    
+    // Check for YouTube OAuth errors passed from backend redirect
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get('error');
+    if (error) {
+      setErrorMsg(error);
+      // Clean up URL query parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   }, []);
 
   const fetchVideos = async () => {
@@ -85,6 +94,32 @@ export function Dashboard({ setErrorMsg, setSuccessMsg }: DashboardProps) {
     if (!videoUrl) return;
 
     setErrorMsg(null);
+
+    const isYouTubeUrl = (url: string) => {
+      const lower = url.toLowerCase();
+      return lower.includes('youtube.com') || lower.includes('youtu.be');
+    };
+
+    if (isYouTubeUrl(videoUrl)) {
+      const token = getToken();
+      if (!token) {
+        setErrorMsg('Authentication token not found. Please log in again.');
+        return;
+      }
+      
+      const queryParams = new URLSearchParams({
+        video_url: videoUrl,
+        token: token,
+        language: targetLanguage,
+      });
+      if (customTitle) {
+        queryParams.append('title', customTitle);
+      }
+      
+      window.location.href = `${BASE_URL}/api/youtube/auth/initiate?${queryParams.toString()}`;
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await api.submitUrl(videoUrl, customTitle || undefined, targetLanguage);

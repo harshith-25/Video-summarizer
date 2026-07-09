@@ -31,31 +31,25 @@ class TranscriptCleaner:
 
     def remove_internal_repetition(self, text: str) -> str:
         words = text.split()
-        n = len(words)
-        if n == 0:
+        if not words:
             return ""
             
-        # Check if the entire phrase is duplicated twice (e.g., "hello world hello world")
-        if n % 2 == 0:
-            half = n // 2
-            if words[:half] == words[half:]:
-                return " ".join(words[:half])
+        # Iteratively find and remove duplicate contiguous sub-sequences of words
+        i = 0
+        while i < len(words):
+            duplicated_found = False
+            # Check for repeated blocks starting at index i
+            for size in range(1, (len(words) - i) // 2 + 1):
+                block1 = words[i : i + size]
+                block2 = words[i + size : i + 2 * size]
+                if block1 == block2:
+                    del words[i + size : i + 2 * size]
+                    duplicated_found = True
+                    break
+            if not duplicated_found:
+                i += 1
                 
-        # Check for smaller repeated blocks of size 3 to 15
-        for size in range(3, min(15, n // 2) + 1):
-            block1 = words[:size]
-            block2 = words[size:size * 2]
-            if block1 == block2:
-                return " ".join(words[size:])
-                
-        # Remove consecutive identical single words
-        cleaned_words = []
-        last = None
-        for w in words:
-            if w.lower() != last:
-                cleaned_words.append(w)
-                last = w.lower()
-        return " ".join(cleaned_words)
+        return " ".join(words)
 
     def merge_segments(self, segments: List[Dict], min_paragraph_duration: float = 40.0, hard_max_duration: float = 90.0) -> List[Dict]:
         """

@@ -1,0 +1,78 @@
+.details-layout-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: start;
+  margin-top: 1.5rem;
+}
+@media (min-width: 992px) {
+  .details-layout-grid {
+    grid-template-columns: 1fr;
+  }
+  .video-player-card {
+    position: relative;
+    top: 0;
+  }
+}
+.video-player-card {
+  padding: 1.25rem;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* --- Fix: nothing (glass-panel blur pseudo-elements, overlays, etc.)
+   can sit above the video and eat clicks meant for its native controls. --- */
+.video-click-guard {
+  position: relative;
+  isolation: isolate;   /* creates a fresh stacking context, independent of any parent ::before/::after */
+  z-index: 0;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+}
+.video-click-guard * {
+  pointer-events: auto;
+}
+.details-video-el {
+  position: relative;
+  z-index: 2147483647; /* max safe int: guarantees this sits above any overlay in the same stacking context */
+  width: 100%;
+  display: block;
+  max-height: 540px;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  pointer-events: auto;
+}
+
+.timeline-item-interactive {
+  cursor: pointer;
+  transition: background-color var(--transition-speed), transform var(--transition-speed);
+  border-radius: var(--border-radius-sm);
+  padding: 0.6rem;
+  margin-left: -0.6rem;
+  margin-right: -0.6rem;
+}
+.timeline-item-interactive:hover {
+  background-color: var(--bg-tertiary);
+  transform: translateX(4px);
+}
+.timeline-item-interactive:active {
+  transform: scale(0.98) translateX(4px);
+}
+.transcript-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+.transcript-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+.transcript-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+.transcript-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
