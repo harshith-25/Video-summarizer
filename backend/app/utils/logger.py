@@ -1,6 +1,6 @@
 import logging
 import sys
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
 import os
 
 def setup_logger():
@@ -15,11 +15,12 @@ def setup_logger():
     if root_logger.hasHandlers():
         root_logger.handlers.clear()
 
-    # File handler with UTF-8 encoding
-    file_handler = RotatingFileHandler(
+    # File handler with UTF-8 encoding (rotates daily at midnight)
+    file_handler = TimedRotatingFileHandler(
         'logs/app.log',
-        maxBytes=10240000,
-        backupCount=10,
+        when='midnight',
+        interval=1,
+        backupCount=30,
         encoding='utf-8'
     )
     file_formatter = logging.Formatter(

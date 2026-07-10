@@ -1,5 +1,5 @@
-export const BASE_URL = 'http://localhost:7879'; // FastAPI backend default port
-// export const BASE_URL = 'https://silfratech.in/video-summarizer-backend'; // FastAPI backend default port
+// export const BASE_URL = 'http://localhost:7879'; // FastAPI backend default port
+export const BASE_URL = 'https://silfratech.in/video-summarizer-backend'; // FastAPI backend default port
 
 export function getToken(): string | null {
   return localStorage.getItem('token');

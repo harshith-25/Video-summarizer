@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AlertTriangle as AlertTriangleIcon, CheckCircle2 as CheckCircle2Icon } from 'lucide-react';
 import { api, isLoggedIn } from './api';
-import { Navbar } from './components/Navbar';
-import { Login } from './pages/Login';
-import { Signup } from './pages/Signup';
-import { Dashboard } from './pages/Dashboard';
-import { Tracker } from './pages/Tracker';
-import { Details } from './pages/Details';
+import Navbar from './components/Navbar';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import Dashboard from './pages/Dashboard';
+import Tracker from './pages/Tracker';
+import Details from './pages/Details';
+import Privacy from './pages/Privacy';
+import Terms from './pages/Terms';
 
 // Simple Route Guard
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -18,7 +20,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export function App() {
+export default function App() {
   const [user, setUser] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -121,6 +123,8 @@ export function App() {
                 </ProtectedRoute>
               } 
             />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
@@ -138,5 +142,3 @@ export function App() {
     </Router>
   );
 }
-
-export default App;

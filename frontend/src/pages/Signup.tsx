@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 
-export function Signup() {
+export default function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -111,4 +111,3 @@ export function Signup() {
     </div>
   );
 }
-export default Signup;

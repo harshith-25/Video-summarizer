@@ -35,6 +35,11 @@
 
   --bg-gradient-1: hsla(260, 90%, 60%, 0.08);
   --bg-gradient-2: hsla(190, 90%, 50%, 0.06);
+
+  /* Navbar, Button, and Dropzone theme components */
+  --navbar-bg: hsla(230, 25%, 9%, 0.7);
+  --btn-secondary-hover-bg: hsl(230, 20%, 22%);
+  --drop-zone-bg: hsla(230, 25%, 9%, 0.4);
 }
 
 [data-theme="light"] {
@@ -58,6 +63,11 @@
 
   --bg-gradient-1: hsla(260, 90%, 60%, 0.04);
   --bg-gradient-2: hsla(190, 90%, 50%, 0.03);
+
+  /* Navbar, Button, and Dropzone theme components */
+  --navbar-bg: hsla(0, 0%, 100%, 0.75);
+  --btn-secondary-hover-bg: hsl(220, 20%, 82%);
+  --drop-zone-bg: hsla(220, 20%, 94%, 0.5);
 }
 
 /* Global Reset */
@@ -154,7 +164,7 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: space-between;
   padding: 1rem 2rem;
-  background: hsla(230, 25%, 9%, 0.7);
+  background: var(--navbar-bg);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-color);
   position: sticky;
@@ -263,7 +273,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .btn-secondary:hover {
-  background: hsl(230, 20%, 22%);
+  background: var(--btn-secondary-hover-bg);
   border-color: var(--text-muted);
 }
 
@@ -386,7 +396,7 @@ h1, h2, h3, h4, h5, h6 {
   padding: 2rem 1.5rem;
   text-align: center;
   cursor: pointer;
-  background: hsla(230, 25%, 9%, 0.4);
+  background: var(--drop-zone-bg);
   transition: all var(--transition-speed);
   display: flex;
   flex-direction: column;
@@ -396,7 +406,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .drop-zone:hover, .drop-zone.active {
   border-color: var(--accent-primary);
-  background: hsla(260, 85%, 63%, 0.04);
+  background: var(--accent-glow);
 }
 
 .drop-zone-icon {
@@ -753,6 +763,10 @@ h1, h2, h3, h4, h5, h6 {
   gap: 0.5rem;
 }
 
+[data-theme="light"] .error-box {
+  color: var(--color-danger);
+}
+
 .empty-state {
   text-align: center;
   padding: 3rem 1.5rem;
@@ -797,4 +811,3 @@ h1, h2, h3, h4, h5, h6 {
 .password-input-container .form-input {
   padding-right: 40px;
 }
-

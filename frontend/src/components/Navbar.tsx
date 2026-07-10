@@ -4,7 +4,7 @@ import {
   User as UserIcon, 
   LogOut as LogOutIcon 
 } from 'lucide-react';
-import { ThemeToggle } from './ThemeToggle';
+import ThemeToggle from './ThemeToggle';
 import { setToken } from '../api';
 
 type NavbarProps = {
@@ -12,7 +12,7 @@ type NavbarProps = {
   setUser: (user: any) => void;
 };
 
-export function Navbar({ user, setUser }: NavbarProps) {
+export default function Navbar({ user, setUser }: NavbarProps) {
   const navigate = useNavigate();
 
   const handleLogout = () => {

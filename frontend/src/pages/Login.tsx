@@ -12,7 +12,7 @@ type LoginProps = {
   fetchUserProfile: () => Promise<void>;
 };
 
-export function Login({ fetchUserProfile }: LoginProps) {
+export default function Login({ fetchUserProfile }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -103,4 +103,3 @@ export function Login({ fetchUserProfile }: LoginProps) {
     </div>
   );
 }
-export default Login;

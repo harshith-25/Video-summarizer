@@ -12,7 +12,7 @@ type TrackerProps = {
   setSuccessMsg: (msg: string | null) => void;
 };
 
-export function Tracker({ setErrorMsg, setSuccessMsg }: TrackerProps) {
+export default function Tracker({ setErrorMsg, setSuccessMsg }: TrackerProps) {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const [job, setJob] = useState<any>({ progress: 0, message: 'Initiating pipeline...', status: 'queued' });
@@ -102,5 +102,3 @@ export function Tracker({ setErrorMsg, setSuccessMsg }: TrackerProps) {
     </div>
   );
 }
-
-export default Tracker;

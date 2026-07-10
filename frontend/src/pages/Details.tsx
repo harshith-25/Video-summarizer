@@ -51,7 +51,7 @@ type DetailsProps = {
   setErrorMsg: (msg: string | null) => void;
 };
 
-export function Details({ setErrorMsg }: DetailsProps) {
+export default function Details({ setErrorMsg }: DetailsProps) {
   const { videoId } = useParams<{ videoId: string }>();
   const navigate = useNavigate();
 
@@ -625,5 +625,3 @@ export function Details({ setErrorMsg }: DetailsProps) {
     </div>
   );
 }
-
-export default Details;

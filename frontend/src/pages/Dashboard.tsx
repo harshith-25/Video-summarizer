@@ -44,7 +44,7 @@ const LANGUAGES = [
   { code: 'ur', name: 'Urdu (اردو)' }
 ];
 
-export function Dashboard({ setErrorMsg, setSuccessMsg }: DashboardProps) {
+export default function Dashboard({ setErrorMsg, setSuccessMsg }: DashboardProps) {
   const navigate = useNavigate();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
@@ -525,5 +525,3 @@ function HistoryIconWrapper() {
     </svg>
   );
 }
-
-export default Dashboard;

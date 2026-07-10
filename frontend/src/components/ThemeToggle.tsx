@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Sun as SunIcon, Moon as MoonIcon } from 'lucide-react';
 
-export function ThemeToggle() {
+export default function ThemeToggle() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
   });
